@@ -1,0 +1,373 @@
+---
+title: "TheGolf"
+output: html_document
+date: "2023-05-24"
+---
+
+```{r setup}
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(coach)
+library(TTR)
+library(XML)
+library(RCurl)
+# library(rlist)
+library(lpSolve)
+library(googlesheets4)
+library(R.utils)
+library(httr)
+library(jsonlite)
+options(scipen=999)
+```
+
+### 3 ball
+
+```{r three-ball}
+
+bankroll <- 3500
+kelly_mult <- .2
+
+data <- GET("https://feeds.datagolf.com/betting-tools/matchups?tour=pga&market=3_balls&odds_format=percent&file_format=json&key=2315a7465afc65811895b6878892")
+
+data <- fromJSON(rawToChar(data$content))
+
+three_ball <- as.data.frame(rbind(data[["match_list"]][["p1_player_name"]], data[["match_list"]][["p2_player_name"]], data[["match_list"]][["p3_player_name"]], data[["match_list"]][["ties"]], data[["match_list"]][["odds"]][["datagolf"]][["p1"]], data[["match_list"]][["odds"]][["datagolf"]][["p2"]], data[["match_list"]][["odds"]][["datagolf"]][["p3"]], data[["match_list"]][["odds"]][["bet365"]][["p1"]], data[["match_list"]][["odds"]][["bet365"]][["p2"]], data[["match_list"]][["odds"]][["bet365"]][["p3"]], data[["match_list"]][["odds"]][["draftkings"]][["p1"]], data[["match_list"]][["odds"]][["draftkings"]][["p2"]], data[["match_list"]][["odds"]][["draftkings"]][["p3"]], data[["match_list"]][["odds"]][["betmgm"]][["p1"]], data[["match_list"]][["odds"]][["betmgm"]][["p2"]], data[["match_list"]][["odds"]][["betmgm"]][["p3"]]))
+
+#rownames(three_ball) <- c("p1", "p2", "p3", "ties", "DGp1", "DGp2", "DGp3", "bet365p1", "bet365p2", "bet365p3", "DKp1", "DKp2", "DKp3", "MGMp1", "MGMp2", "MGMp3")
+three_ball <- t(three_ball)
+ev <- as.data.frame(three_ball)
+
+colnames(ev) <- c("p1", "p2", "p3", "ties", "DGp1", "DGp2", "DGp3", c("bet365p1", "bet365p2", "bet365p3", "draftkingsp1","draftkingsp2","draftkingsp3", "betmgmp1","betmgmp2","betmgmp3")[c("bet365", "bet365", "bet365", "draftkings","draftkings","draftkings", "betmgm","betmgm","betmgm") %in% colnames(data[["match_list"]][["odds"]])])
+ev[is.na(ev)]<- 0
+
+for(i in 5:ncol(ev)){
+  ev[,i] <- as.numeric(ev[,i])
+}
+
+for(i in 0:(ncol(ev)-8)){
+
+  ev[,8+i] <- ev[,i%%3+5]-(1-ev[,i%%3+5])/(1/ev[,8+i]-1)
+
+}
+ev[,8:ncol(ev)]<- ev[,8:ncol(ev)]*(as.numeric(!is.na(three_ball[,8:ncol(ev)])))
+ev[,8:ncol(ev)]<- round(ev[,8:ncol(ev)]*(ev[,8:ncol(ev)]>0)*bankroll*kelly_mult, digits = 2)
+
+# bet365_br <- sum(ev[,8:10])
+# dk_br <- sum(ev[,11:13])
+# mgm_br <- sum(ev[,14:16])
+
+three_ball_ev <- ev
+
+write.csv(three_ball_ev, "C:/Users/jorda/Downloads/ThreeBall.csv")
+
+```
+
+
+### Tournament Matchups
+
+```{r tournament-matchups}
+
+bankroll <- 3500
+kelly_mult <- .1
+
+data <- GET("https://feeds.datagolf.com/betting-tools/matchups?tour=pga&market=tournament_matchups&odds_format=percent&file_format=json&key=2315a7465afc65811895b6878892")
+
+data <- fromJSON(rawToChar(data$content))
+
+tourney <- as.data.frame(rbind(data[["match_list"]][["p1_player_name"]], data[["match_list"]][["p2_player_name"]], data[["match_list"]][["p3_player_name"]], data[["match_list"]][["ties"]], data[["match_list"]][["odds"]][["datagolf"]][["p1"]], data[["match_list"]][["odds"]][["datagolf"]][["p2"]], data[["match_list"]][["odds"]][["bet365"]][["p1"]], data[["match_list"]][["odds"]][["bet365"]][["p2"]],  data[["match_list"]][["odds"]][["draftkings"]][["p1"]], data[["match_list"]][["odds"]][["draftkings"]][["p2"]],  data[["match_list"]][["odds"]][["betmgm"]][["p1"]], data[["match_list"]][["odds"]][["betmgm"]][["p2"]],  data[["match_list"]][["odds"]][["fanduel"]][["p1"]], data[["match_list"]][["odds"]][["fanduel"]][["p2"]]))
+
+#rownames(tourney) <- c("p1", "p2", "ties", "DGp1", "DGp2",  "bet365p1", "bet365p2",  "DKp1", "DKp2",  "MGMp1", "MGMp2", "FDp1", "FDp2")
+tourney <- t(tourney)
+ev <- as.data.frame(tourney)
+
+colnames(ev) <- c("p1", "p2", "ties", c("DGp1", "DGp2",  "bet365p1", "bet365p2",  "DKp1", "DKp2",  "MGMp1", "MGMp2", "FDp1", "FDp2")[c("datagolf", "datagolf",  "bet365", "bet365",  "draftkings", "draftkings",  "betmgm", "betmgm", "fanduel", "fanduel") %in% colnames(data[["match_list"]][["odds"]])])
+ev[is.na(ev)]<- 0
+
+for(i in 4:ncol(ev)){
+  ev[,i] <- as.numeric(ev[,i])
+}
+
+voidev <- filter(ev, ties == "void")
+sep_betev <- filter(ev, ties == "separate bet offered")
+
+for(i in 0:(ncol(ev)-6)){
+  void_zero <- as.numeric(!voidev[6+i]==0)
+  sep_zero <- as.numeric(!sep_betev[6+i]==0)
+  voidev[,6+i] <- (voidev[,i%%2+4]-(1-voidev[,i%%2+4])/(1/voidev[,6+i]-1))*void_zero
+  sep_betev[,6+i] <- (sep_betev[,i%%2+4]-(1-sep_betev[,i%%2+4])/(1/sep_betev[,6+i]-1))*sep_zero
+
+}
+
+sep_betev[,6:ncol(ev)]<- round(sep_betev[,6:ncol(ev)]*(sep_betev[,6:ncol(ev)]>0)*bankroll*kelly_mult, digits = 2)
+
+voidev[,6:ncol(ev)]<- round(voidev[,6:ncol(ev)]*(voidev[,6:ncol(ev)]>0)*bankroll*kelly_mult, digits = 2)
+
+bet365_br <- sum(sep_betev$bet365p1)+sum(sep_betev$bet365p2)+sum(voidev$bet365p1)+sum(voidev$bet365p2)
+dk_br  <- sum(sep_betev$DKp1)+sum(sep_betev$DKp2)+sum(voidev$DKp1)+sum(voidev$DKp2)
+fd_br  <- sum(sep_betev$FDp1)+sum(sep_betev$FDp2)+sum(voidev$FDp1)+sum(voidev$FDp2)
+mgm_br  <- sum(sep_betev$MGMp1)+sum(sep_betev$MGMp2)+sum(voidev$MGMp1)+sum(voidev$MGMp2)
+
+tournament_ev <- rbind(voidev, sep_betev)
+
+write.csv(tournament_ev, "C:/Users/jorda/Downloads/TournamentMatchups.csv")
+
+
+```
+
+### Round Matchups
+
+```{r round-matchups}
+
+bankroll <- 3500
+kelly_mult <- .2
+
+data <- GET("https://feeds.datagolf.com/betting-tools/matchups?tour=pga&market=round_matchups&odds_format=percent&file_format=json&key=2315a7465afc65811895b6878892")
+
+data <- fromJSON(rawToChar(data$content))
+
+tourney <- as.data.frame(rbind(data[["match_list"]][["p1_player_name"]], data[["match_list"]][["p2_player_name"]], data[["match_list"]][["p3_player_name"]], data[["match_list"]][["ties"]], data[["match_list"]][["odds"]][["datagolf"]][["p1"]], data[["match_list"]][["odds"]][["datagolf"]][["p2"]], data[["match_list"]][["odds"]][["bet365"]][["p1"]], data[["match_list"]][["odds"]][["bet365"]][["p2"]],  data[["match_list"]][["odds"]][["draftkings"]][["p1"]], data[["match_list"]][["odds"]][["draftkings"]][["p2"]],  data[["match_list"]][["odds"]][["betmgm"]][["p1"]], data[["match_list"]][["odds"]][["betmgm"]][["p2"]]))
+
+#rownames(tourney) <- c("p1", "p2", "ties", "DGp1", "DGp2",  "bet365p1", "bet365p2",  "DKp1", "DKp2")
+tourney <- t(tourney)
+ev <- as.data.frame(tourney)
+
+colnames(ev) <- c("p1", "p2", "ties", "DGp1", "DGp2",  c("bet365p1", "bet365p2",  "DKp1", "DKp2", "MGMp1","MGMp2")[c("bet365", "bet365", "draftkings", "draftkings", "betmgm", "betmgm") %in% colnames(data[["match_list"]][["odds"]])])
+ev[is.na(ev)]<- 0
+
+for(i in 4:ncol(ev)){
+  ev[,i] <- as.numeric(ev[,i])
+}
+
+voidev <- filter(ev, ties == "void")
+sep_betev <- filter(ev, ties == "separate bet offered")
+
+for(i in 0:(ncol(ev)-6)){
+  void_zero <- as.numeric(!voidev[6+i]==0)
+  sep_zero <- as.numeric(!sep_betev[6+i]==0)
+  voidev[,6+i] <- (voidev[,i%%2+4]-(1-voidev[,i%%2+4])/(1/voidev[,6+i]-1))*void_zero
+  sep_betev[,6+i] <- (sep_betev[,i%%2+4]-(1-sep_betev[,i%%2+4])/(1/sep_betev[,6+i]-1))*sep_zero
+
+}
+
+sep_betev[,6:ncol(ev)]<- round(sep_betev[,6:ncol(ev)]*(sep_betev[,6:ncol(ev)]>0)*bankroll*kelly_mult, digits = 2)
+
+voidev[,6:ncol(ev)]<- round(voidev[,6:ncol(ev)]*(voidev[,6:ncol(ev)]>0)*bankroll*kelly_mult, digits = 2)
+
+bet365_br <- sum(voidev$bet365p1)+sum(voidev$bet365p2)
+dk_br  <- sum(voidev$DKp1)+sum(voidev$DKp2)
+mgm_br  <- sum(voidev$MGMp1)+sum(voidev$MGMp2)
+
+round_matchup_ev <- rbind(voidev, sep_betev)
+
+write.csv(round_matchup_ev, "C:/Users/jorda/Downloads/RoundMatchups.csv")
+
+
+```
+
+
+### Outright finish
+
+```{r outright-finish}
+
+bankroll <- 3500
+kelly_mult <- .15
+
+for(m in c("win", "top_5", "top_10", "top_20")){
+ # m <- "top_20"
+  url <- gsub(" ", "", paste0("https://feeds.datagolf.com/betting-tools/outrights?tour=pga&market=", m, "&odds_format=percent&file_format=json&key=2315a7465afc65811895b6878892"))
+  
+data <- GET(url)
+
+data <- fromJSON(rawToChar(data$content))
+
+tourney <- as.data.frame(rbind(data[["odds"]][["player_name"]],data[["odds"]][["datagolf"]][["baseline_history_fit"]],data[["odds"]][["bet365"]],data[["odds"]][["draftkings"]],data[["odds"]][["fanduel"]],data[["odds"]][["betmgm"]]), row.names = c("player_name", "datagolf", "bet365", "draftkings", "fanduel",  "betmgm")[c("player_name", "datagolf", "bet365", "draftkings", "fanduel",  "betmgm") %in% colnames(data[["odds"]])])
+
+#rownames(tourney) <- c("player_name", "datagolf", "bet365", "draftkings", "fanduel",  "betmgm")
+tourney <- t(tourney)
+ev <- as.data.frame(tourney)
+ev[is.na(ev)]<- 0
+
+for(i in 2:ncol(ev)){
+  ev[,i] <- as.numeric(ev[,i])
+}
+
+for(i in 3:ncol(ev)){
+  no_bet <- as.numeric(!ev[,i]==0)
+  ev[,i] <- (ev[,2]-(1-ev[,2])/(1/ev[,i]-1)) * no_bet 
+}
+
+ev[,3:ncol(ev)]<- round(ev[,3:ncol(ev)]*(ev[,3:ncol(ev)]>0)*bankroll*kelly_mult, digits = 2)
+
+assign(m, ev)
+}
+
+# bet365_br <- sum(sep_betev$bet365p1)+sum(sep_betev$bet365p2)+sum(voidev$bet365p1)+sum(voidev$bet365p2)
+# dk_br  <- sum(sep_betev$DKp1)+sum(sep_betev$DKp2)+sum(voidev$DKp1)+sum(voidev$DKp2)
+# fd_br  <- sum(sep_betev$FDp1)+sum(sep_betev$FDp2)+sum(voidev$FDp1)+sum(voidev$FDp2)
+# mgm_br  <- sum(sep_betev$MGMp1)+sum(sep_betev$MGMp2)+sum(voidev$MGMp1)+sum(voidev$MGMp2)
+
+#tournament_ev <- rbind(voidev, sep_betev)
+write.csv(win, "C:/Users/jorda/Downloads/win.csv")
+write.csv(top_5, "C:/Users/jorda/Downloads/top_5.csv")
+write.csv(top_10, "C:/Users/jorda/Downloads/top_10.csv")
+write.csv(top_20, "C:/Users/jorda/Downloads/top_20.csv")
+
+
+```
+
+
+### DK DFS
+```{r dk-dfs}
+
+data <- GET("https://feeds.datagolf.com/preds/fantasy-projection-defaults?tour=pga&site=draftkings&slate=main&file_format=json&key=2315a7465afc65811895b6878892")
+data <- fromJSON(rawToChar(data$content))
+
+oprojections <- as.data.frame(data$projections)
+
+num_lineups <- 65
+variance <- 35 #extent of variance in player projections
+width <- 9 #how wide of a shape for the distribution curve; higher is wider, smaller is narrower
+min_kelly <- .15
+
+oprojections$value <- predict(val_pred, oprojections)
+
+# re-do calc later if needed but prediction should stay good unless environment is cleared
+#
+# find_val <- projections[1:35,]
+# find_val$value <- c(1, .24, .05, .06, -.12, .69, -.14, .76, .01, .23, .16, .08, .28, .43, .26, -0.01, -.14, -.24, .19, .37, .36, .16, .09, -.02, .29, .05, .06, .05, .27, .08, .39, .36, .12, .07, -.09)
+# 
+# val_pred <- lm(value ~ salary + proj_points, data = find_val)
+# summary(val_pred)
+
+# p <- 95
+# s1 <- 3.5*p/110
+# s2 <- 7-s1
+# 
+# test <- (rbeta(1000, shape1 = s1, shape2 = s2))* 24 +p*.9
+# 
+# hist(test)
+pb <- txtProgressBar(0, num_lineups, style = 3)
+vown <- rep(0, nrow(oprojections))
+n <- 0
+while(n < 500){
+  
+  projections <- oprojections
+  
+  objective.in <- rbeta(nrow(projections), shape1 = width*projections$proj_points/220, shape2 = width-width*projections$proj_points/220)*variance+projections$proj_points*.9
+  
+  vsalary <- projections$salary
+  vplayers <- rep(1, nrow(projections))
+  
+  matrix_vector <- c(vsalary, vplayers)
+  const.mat = matrix(matrix_vector, nrow = length(matrix_vector)/nrow(projections), byrow = TRUE)
+# 
+# ## Define constraints and direction - 50000 salary
+const.rhs = c(50000, 6)
+const.dir = c("<=" , "==")
+
+optimum = lp(direction = "max", objective.in, const.mat, const.dir, const.rhs, all.bin = TRUE)
+
+projections$optimal <- optimum$solution
+
+vown <- vown + projections$optimal
+
+lineup <- projections %>%
+  filter(optimal == 1)
+lineup <- lineup[order(lineup$dg_id),]
+
+if(n==0){
+  final_export <-as.numeric(gsub(".*?([0-9]+).*$", "\\1", lineup$site_name_id))
+  n <- 1
+
+}else{
+  final_export <- rbind(final_export, as.numeric(gsub(".*?([0-9]+).*$", "\\1", lineup$site_name_id)))
+  final_export <- unique(final_export)
+  n <- nrow(final_export)
+}
+
+ #setTxtProgressBar(pb, n)
+  
+}
+
+projections$own_count <- vown
+projections$own_pct <- vown/500
+projections$kelly <- projections$own_pct - (1-projections$own_pct)/(1/(projections$proj_ownership/100)-1)
+nprojections<- projections
+
+vown <- rep(0, nrow(oprojections))
+n <- 0
+while(n < num_lineups){
+  
+  projections <- nprojections
+  
+  objective.in <- rbeta(nrow(projections), shape1 = width*projections$proj_points/220, shape2 = width-width*projections$proj_points/220)*variance+projections$proj_points*.9
+  
+  vsalary <- projections$salary
+  vplayers <- rep(1, nrow(projections))
+  vkelly <- projections$kelly
+  
+  matrix_vector <- c(vsalary, vplayers, vkelly)
+  const.mat = matrix(matrix_vector, nrow = length(matrix_vector)/nrow(projections), byrow = TRUE)
+# 
+# ## Define constraints and direction - 50000 salary
+const.rhs = c(50000, 6, min_kelly)
+const.dir = c("<=" , "==", ">=")
+
+optimum = lp(direction = "max", objective.in, const.mat, const.dir, const.rhs, all.bin = TRUE)
+
+projections$optimal <- optimum$solution
+
+vown <- vown + projections$optimal
+
+lineup <- projections %>%
+  filter(optimal == 1)
+lineup <- lineup[order(lineup$dg_id),]
+
+if(n==0){
+  final_export <-as.numeric(gsub(".*?([0-9]+).*$", "\\1", lineup$site_name_id))
+  n <- 1
+
+}else{
+  final_export <- rbind(final_export, as.numeric(gsub(".*?([0-9]+).*$", "\\1", lineup$site_name_id)))
+  final_export <- unique(final_export)
+  n <- nrow(final_export)
+}
+
+ setTxtProgressBar(pb, n)
+  
+}
+
+projections$own_count <- vown
+projections$own_pct <- vown/num_lineups
+projections<- projections[order(-projections$own_count),]
+
+close(pb)
+colnames(final_export) <- c("G", "G", "G", "G", "G", "G")
+
+write.csv(final_export, "C:/Users/jorda/Downloads/DKLineupsGOLF.csv", row.names = FALSE)
+
+```
+
+### Lineup Editor
+```{r lineup-editor}
+
+### Build lineups above, then use this to edit entries for direct upload
+
+plineups <- read.csv("C:/Users/jorda/Downloads/DKEntriesGOLF.csv")
+
+plineups <- filter(plineups, !is.na(Entry.ID) & !is.na(as.numeric(Entry.ID))) %>%
+  select(Entry.ID, Contest.Name, Contest.ID, Entry.Fee)
+
+newlineups <- read.csv("C:/Users/jorda/Downloads/DKLineupsGOLF.csv")
+
+newlineups <- cbind(plineups, newlineups)
+colnames(newlineups) <- c("Entry ID", "Contest Name", "Contest ID", "Entry Fee", "G", "G", "G", "G", "G", "G")
+
+write.csv(newlineups, "C:/Users/jorda/Downloads/DKEntriesGOLF.csv", row.names = FALSE)
+
+```
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
